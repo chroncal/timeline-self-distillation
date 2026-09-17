@@ -33,39 +33,145 @@ from timeline_self_distillation.terminal_adapter import install_terminal_query_l
 from verl.experimental.routed_grounding.router import parse_response, xyxy_iou
 
 
+DEFAULT_TEACHER = "zero_cot"
+TEACHER_CHOICES = ("zero_cot", "early_step0", "early_span1", "late_scrub", "late_entity")
+
+
+def teacher_protocol_receipt(teacher):
+    if teacher == "zero_cot":
+        return {
+            "kind": "zero_cot_direct_bbox",
+            "cache_origin": "c0_empty_assistant_thinking_state",
+            "reasoning": "none",
+            "uses_entity_bridge": False,
+            "repeats_question": False,
+            "suffix": BOX_OPEN,
+            "limitation": "question-conditioned through c0; not text-free pure perception",
+        }
+    legacy = {
+        "early_step0": ("legacy_step0_entity_query", "c0", "none"),
+        "early_span1": ("legacy_span1_entity_query", "c0_plus_first_reasoning_span", "first_span"),
+        "late_scrub": (
+            "legacy_scrubbed_reasoning_entity_query",
+            "c0_plus_scrubbed_full_reasoning",
+            "scrubbed_full_reasoning",
+        ),
+        "late_entity": ("legacy_late_reasoning_entity_query", "c0_plus_full_reasoning", "full_reasoning"),
+    }
+    if teacher not in legacy:
+        raise ValueError(teacher)
+    kind, cache_origin, reasoning = legacy[teacher]
+    return {
+        "kind": kind,
+        "cache_origin": cache_origin,
+        "reasoning": reasoning,
+        "uses_entity_bridge": True,
+        "repeats_question": True,
+        "suffix": "QUERY(entity, question) + BOX_OPEN",
+        "limitation": "legacy entity-conditioned control; not a pure perception teacher",
+    }
+
+
+def _validate_zero_cot_c0(rendered_prompt):
+    """Fail closed unless C0 is the untouched assistant thinking opener."""
+
+    if not rendered_prompt.endswith("<think>\n"):
+        raise RuntimeError(
+            "zero_cot requires c0 at an empty assistant thinking state ending in '<think>\\n'"
+        )
+
+
+def _encode_exact_suffix(tokenizer, text, label):
+    token_ids = tokenizer.encode(text, add_special_tokens=False)
+    if not token_ids:
+        raise RuntimeError(f"{label} must contain at least one token")
+    if decode_ids(tokenizer, token_ids) != text:
+        raise RuntimeError(f"{label} failed exact tokenizer round-trip")
+    return token_ids
+
+
 def build_states(model, processor, records, teacher):
     states = []
     model.eval()
     with torch.no_grad():
         for row in records:
             print(f"CACHE {row['sample_id']} replay full frozen reasoning", flush=True)
-            _, inputs = _render_and_process(processor, row["expression"], _load_rgb_image(row["image_path"]))
+            rendered, inputs = _render_and_process(
+                processor, row["expression"], _load_rgb_image(row["image_path"])
+            )
+            if teacher == "zero_cot":
+                _validate_zero_cot_c0(rendered)
             inputs = {k: v.to("cuda") if isinstance(v, torch.Tensor) else v for k, v in inputs.items()}
             out = model(**inputs, use_cache=True, logits_to_keep=1, return_dict=True)
             c0 = out.past_key_values
             delta = model.model.rope_deltas.detach().clone()
             cT, _ = _advance(model, fork(c0), row["reasoning_ids"])
-            if teacher == "early_step0":
+            teacher_suffix = None
+            if teacher == "zero_cot":
                 cteacher = c0
+                teacher_suffix = BOX_OPEN
+                teacher_conditioning = {
+                    "kind": "zero_cot_direct_bbox",
+                    "reasoning_tokens": 0,
+                    "uses_entity_bridge": False,
+                    "repeats_question": False,
+                    "suffix": BOX_OPEN,
+                }
+            elif teacher == "early_step0":
+                cteacher = c0
+                teacher_conditioning = {
+                    "kind": "legacy_step0_entity_query",
+                    "reasoning_tokens": 0,
+                    "uses_entity_bridge": True,
+                    "repeats_question": True,
+                }
             elif teacher == "early_span1":
                 cteacher, _ = _advance(model, fork(c0), row["reasoning_ids"][: row["first_span_offset"]])
+                teacher_conditioning = {
+                    "kind": "legacy_span1_entity_query",
+                    "reasoning_tokens": int(row["first_span_offset"]),
+                    "uses_entity_bridge": True,
+                    "repeats_question": True,
+                }
             elif teacher == "late_scrub":
                 cteacher, _ = _advance(model, fork(c0), row["scrubbed_reasoning_ids"])
+                teacher_conditioning = {
+                    "kind": "legacy_scrubbed_reasoning_entity_query",
+                    "reasoning_tokens": len(row["scrubbed_reasoning_ids"]),
+                    "uses_entity_bridge": True,
+                    "repeats_question": True,
+                }
             elif teacher == "late_entity":
                 cteacher = cT
+                teacher_conditioning = {
+                    "kind": "legacy_late_reasoning_entity_query",
+                    "reasoning_tokens": len(row["reasoning_ids"]),
+                    "uses_entity_bridge": True,
+                    "repeats_question": True,
+                }
             else:
                 raise ValueError(teacher)
-            suffix = QUERY.format(entity=row["entity"], question=row["expression"]) + BOX_OPEN
-            suffix_ids = processor.tokenizer.encode(suffix, add_special_tokens=False)
-            cstudent, _ = _advance(model, fork(cT), suffix_ids[:-1])
-            cteacher, _ = _advance(model, fork(cteacher), suffix_ids[:-1])
+            student_suffix = QUERY.format(entity=row["entity"], question=row["expression"]) + BOX_OPEN
+            if teacher_suffix is None:
+                teacher_suffix = student_suffix
+            student_suffix_ids = _encode_exact_suffix(
+                processor.tokenizer, student_suffix, "student bbox conditioning suffix"
+            )
+            teacher_suffix_ids = _encode_exact_suffix(
+                processor.tokenizer, teacher_suffix, "teacher bbox conditioning suffix"
+            )
+            if student_suffix_ids[-1] != teacher_suffix_ids[-1]:
+                raise RuntimeError("student and teacher bbox openings must end in the same prediction token")
+            cstudent, _ = _advance(model, fork(cT), student_suffix_ids[:-1])
+            cteacher, _ = _advance(model, fork(cteacher), teacher_suffix_ids[:-1])
             states.append(
                 {
                     "row": row,
                     "student": cstudent,
                     "teacher": cteacher,
-                    "last_opening_id": suffix_ids[-1],
+                    "last_opening_id": student_suffix_ids[-1],
                     "rope_deltas": delta,
+                    "teacher_conditioning": teacher_conditioning,
                 }
             )
     return states
@@ -206,6 +312,7 @@ def run(args):
         {
             "kind": "five_seen_image_bbox_on_policy_micro_training",
             "teacher": args.teacher,
+            "teacher_conditioning": teacher_protocol_receipt(args.teacher),
             "steps": args.steps,
             "lr": args.lr,
             "rank": 8,
@@ -291,14 +398,26 @@ def run(args):
     )
 
 
-if __name__ == "__main__":
+def parse_args(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--pilot-records", type=Path, required=True)
     p.add_argument("--output-dir", type=Path, required=True)
-    p.add_argument("--teacher", choices=("early_step0", "early_span1", "late_scrub", "late_entity"), required=True)
+    p.add_argument(
+        "--teacher",
+        choices=TEACHER_CHOICES,
+        default=DEFAULT_TEACHER,
+        help=(
+            "Teacher conditioning. The default zero_cot branches directly from c0 to BOX_OPEN. "
+            "All other choices are retained only as legacy experiment controls."
+        ),
+    )
     p.add_argument("--steps", type=int, default=20)
     p.add_argument("--lr", type=float, default=0.001)
     p.add_argument("--divergence", choices=("reverse", "forward"), default="reverse")
     p.add_argument("--eval-draws", type=int, default=4)
     p.add_argument("--device", default="3")
-    run(p.parse_args())
+    return p.parse_args(argv)
+
+
+if __name__ == "__main__":
+    run(parse_args())
