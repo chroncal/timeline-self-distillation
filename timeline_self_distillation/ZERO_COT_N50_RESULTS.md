@@ -24,6 +24,12 @@ selected using IoU.
   rank-8 terminal bbox adapter. Ground truth is used only after generation for
   evaluation.
 
+This report contains one training run. Sampling seeds are fixed, but PyTorch
+reported that the Flash Attention backward kernel is nondeterministic while the
+script was running with `warn_only=True`. The teacher/initial comparison does
+not use backward; the exact post-training number should still be repeated
+before it is treated as a stable optimization estimate.
+
 ## Raw condition table
 
 | condition | mean IoU | draw SD | Acc@0.5 | valid boxes |
