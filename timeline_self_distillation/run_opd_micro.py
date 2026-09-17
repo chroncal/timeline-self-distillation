@@ -33,7 +33,6 @@ from timeline_self_distillation.terminal_adapter import install_terminal_query_l
 from verl.experimental.routed_grounding.router import parse_response, xyxy_iou
 
 
-DEFAULT_TEACHER = "zero_cot"
 TEACHER_CHOICES = ("zero_cot", "early_step0", "early_span1", "late_scrub", "late_entity")
 
 
@@ -177,8 +176,10 @@ def build_states(model, processor, records, teacher):
     return states
 
 
-def sample_bbox(model, tokenizer, grammar, state, seed):
-    cache = fork(state["student"])
+def sample_bbox(model, tokenizer, grammar, state, seed, *, cache_role="student"):
+    if cache_role not in ("student", "teacher"):
+        raise ValueError(f"unknown bbox cache role: {cache_role}")
+    cache = fork(state[cache_role])
     model.model.rope_deltas = state["rope_deltas"]
     current_input = state["last_opening_id"]
     matcher = xgr.GrammarMatcher(grammar, terminate_without_stop_token=True)
@@ -300,6 +301,33 @@ def evaluate(model, tokenizer, adapter, grammar, states, output, step, draws):
     return summary
 
 
+def evaluate_teacher(model, tokenizer, adapter, grammar, states, output, draws):
+    """Free-generate from the frozen teacher with seeds matched to student step 0."""
+
+    adapter.enabled = False
+    results = []
+    for index, state in enumerate(states):
+        row = state["row"]
+        for draw in range(draws):
+            seed = SEED + 9_000_000 + index * 1000 + draw
+            pred = sample_bbox(model, tokenizer, grammar, state, seed, cache_role="teacher")
+            iou = float(xyxy_iou(pred["bbox"], row["ground_truth_bbox"])) if pred["parse_valid"] else 0.0
+            result = {k: v for k, v in pred.items() if k != "supports"}
+            result.update(sample_id=row["sample_id"], iou=iou, hit_05=iou >= 0.5, condition="teacher")
+            results.append(result)
+            _append_jsonl(output / "teacher_eval.jsonl", result)
+    summary = {
+        "condition": "teacher",
+        "mean_iou": mean(r["iou"] for r in results),
+        "acc_05": mean(r["hit_05"] for r in results),
+        "valid": sum(r["parse_valid"] for r in results),
+        "n": len(results),
+    }
+    _write_json(output / "teacher_eval_summary.json", summary)
+    print("TEACHER_EVAL " + json.dumps(summary), flush=True)
+    return summary
+
+
 def run(args):
     if os.environ.get("PYTHONHASHSEED") != str(SEED):
         raise RuntimeError(f"set PYTHONHASHSEED={SEED}")
@@ -319,7 +347,10 @@ def run(args):
             "loss": f"numeric-only {args.divergence} KL; task=0; no GT in updates",
             "invalid_box_policy": "grammar numeric rows distilled even if geometry invalid; eval IoU=0",
             "main_policy": "frozen complete r/e, replayed once; bbox freshly sampled each update",
-            "eval": "same five seen images, four fresh fixed draw seeds; steps 0,10,20; not generalization",
+            "eval": (
+                f"same five seen images, {args.eval_draws} fresh fixed draw seeds; "
+                "student at step 0, every 10 updates, and final step; teacher once; not generalization"
+            ),
             "eval_draws": args.eval_draws,
             "source": str(args.pilot_records),
             "seed": SEED,
@@ -352,6 +383,9 @@ def run(args):
     grammar = xgr.GrammarCompiler(
         xgr.TokenizerInfo.from_huggingface(processor.tokenizer, vocab_size=vocab)
     ).compile_regex(BOX_REGEX)
+    teacher_eval = evaluate_teacher(
+        model, processor.tokenizer, adapter, grammar, states, args.output_dir, args.eval_draws
+    )
     optimizer = torch.optim.AdamW(parameters, lr=args.lr, weight_decay=0.0)
     initial_versions = {name: p._version for name, p in model.named_parameters() if not p.requires_grad}
     initial = evaluate(model, processor.tokenizer, adapter, grammar, states, args.output_dir, 0, args.eval_draws)
@@ -387,6 +421,7 @@ def run(args):
     _write_json(
         args.output_dir / "summary.json",
         {
+            "teacher": teacher_eval,
             "initial": initial,
             "final": final,
             "frozen_parameter_versions_unchanged": unchanged,
@@ -405,10 +440,10 @@ def parse_args(argv=None):
     p.add_argument(
         "--teacher",
         choices=TEACHER_CHOICES,
-        default=DEFAULT_TEACHER,
+        required=True,
         help=(
-            "Teacher conditioning. The default zero_cot branches directly from c0 to BOX_OPEN. "
-            "All other choices are retained only as legacy experiment controls."
+            "Teacher conditioning. zero_cot branches directly from c0 to BOX_OPEN but is not "
+            "a validated performance-improving default. Other choices reproduce legacy controls."
         ),
     )
     p.add_argument("--steps", type=int, default=20)

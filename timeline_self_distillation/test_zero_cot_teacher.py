@@ -93,9 +93,13 @@ def test_zero_cot_rejects_c0_that_is_not_at_empty_thinking_state(monkeypatch):
         opd.build_states(_Model(), _Processor(), [row], "zero_cot")
 
 
-def test_cli_defaults_to_zero_cot_and_keeps_legacy_controls_explicit():
-    args = opd.parse_args(["--pilot-records", "pilot.jsonl", "--output-dir", "out"])
+def test_cli_requires_explicit_teacher_after_negative_zero_cot_pilot():
+    with pytest.raises(SystemExit):
+        opd.parse_args(["--pilot-records", "pilot.jsonl", "--output-dir", "out"])
 
+    args = opd.parse_args(
+        ["--pilot-records", "pilot.jsonl", "--output-dir", "out", "--teacher", "zero_cot"]
+    )
     assert args.teacher == "zero_cot"
     assert args.pilot_records == Path("pilot.jsonl")
     assert args.output_dir == Path("out")
@@ -153,3 +157,28 @@ def test_legacy_span1_remains_an_explicit_entity_query_control(monkeypatch):
     suffix_ids = _Processor.tokenizer.encode(legacy_suffix, add_special_tokens=False)
     assert state["teacher"] == ("c0", 9001, 9002, *suffix_ids[:-1])
     assert state["teacher_conditioning"]["kind"] == "legacy_span1_entity_query"
+
+
+def test_teacher_evaluation_free_generates_from_teacher_cache(monkeypatch, tmp_path):
+    seen_roles = []
+
+    def sample(_model, _tokenizer, _grammar, _state, seed, *, cache_role="student"):
+        seen_roles.append(cache_role)
+        return {
+            "ids": [1],
+            "supports": [],
+            "bbox": [10, 20, 30, 40],
+            "parse_valid": True,
+            "completed": True,
+            "seed": seed,
+        }
+
+    monkeypatch.setattr(opd, "sample_bbox", sample)
+    adapter = SimpleNamespace(enabled=True)
+    states = [{"row": {"sample_id": "row-0", "ground_truth_bbox": [10, 20, 30, 40]}}]
+
+    summary = opd.evaluate_teacher(None, None, adapter, None, states, tmp_path, draws=2)
+
+    assert seen_roles == ["teacher", "teacher"]
+    assert adapter.enabled is False
+    assert summary == {"condition": "teacher", "mean_iou": 1.0, "acc_05": 1, "valid": 2, "n": 2}

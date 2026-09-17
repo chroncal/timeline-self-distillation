@@ -6,7 +6,7 @@ Private source snapshot of the timeline self-distillation module and its two sup
 
 The following directories are copied without content changes from the working tree of `routed-grounding-repair-verl`:
 
-- `timeline_self_distillation/`: 28 Python source/test files and one teacher-contract document.
+- `timeline_self_distillation/`: 28 Python source/test files and two teacher/result documents.
 - `live_kv_probe_prototype/`: 5 source/documentation files.
 - `reasoning_checkpoints/`: 8 source/test/protocol/documentation files and 5 symbolic links.
 
@@ -22,14 +22,17 @@ This is a source backup, **not a self-contained runnable distribution**. The pre
 
 ## Issue #1 teacher-definition fix
 
-`run_opd_micro.py` now defaults to a question-conditioned `zero_cot` teacher:
-it forks the untouched `C0` cache and immediately appends the fixed bbox output
+`run_opd_micro.py` now supports a question-conditioned `zero_cot` teacher: it
+forks the untouched `C0` cache and immediately appends the fixed bbox output
 prefix. It consumes no generated reasoning, entity bridge, or repeated question.
 The former `early_span1` and related paths remain available as explicitly named
-legacy controls. See `timeline_self_distillation/TEACHER_DEFINITIONS.md` for the
-exact conditioning contracts and limitations.
+legacy controls. A real five-image, 16-draw pilot found that unconditional OPD
+with this teacher reduced mean IoU, so the teacher must be selected explicitly
+and is not a performance-improving default. See
+`timeline_self_distillation/TEACHER_DEFINITIONS.md` and
+`timeline_self_distillation/ZERO_COT_PILOT_RESULTS.md`.
 
-To verify all 42 regular snapshot files from the repository root (symbolic links are preserved separately in Git):
+To verify all 43 regular snapshot files from the repository root (symbolic links are preserved separately in Git):
 
 ```bash
 sha256sum -c SHA256SUMS

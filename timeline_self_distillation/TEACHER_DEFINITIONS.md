@@ -1,6 +1,6 @@
 # Teacher conditioning contracts
 
-## Default: `zero_cot`
+## Experimental teacher: `zero_cot`
 
 `run_opd_micro.py` now defines the teacher at `C0`, immediately after the
 multimodal chat template opens the assistant thinking block:
@@ -26,10 +26,14 @@ Example:
 ```bash
 PYTHONHASHSEED=260600564 python -m timeline_self_distillation.run_opd_micro \
   --pilot-records /path/to/records.jsonl \
-  --output-dir /path/to/output
+  --output-dir /path/to/output \
+  --teacher zero_cot
 ```
 
-`--teacher zero_cot` is the default.
+`--teacher zero_cot` is required explicitly. It is intentionally not a default:
+the first real five-image, 16-draw pilot found that this teacher was
+geometrically mixed and that unconditional OPD reduced mean IoU. See
+`ZERO_COT_PILOT_RESULTS.md`.
 
 ## Legacy controls
 
