@@ -1,7 +1,8 @@
 """Behavioral contracts for the issue-1 zero-CoT teacher definition."""
 
-from types import SimpleNamespace
+import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import torch
@@ -182,3 +183,72 @@ def test_teacher_evaluation_free_generates_from_teacher_cache(monkeypatch, tmp_p
     assert seen_roles == ["teacher", "teacher"]
     assert adapter.enabled is False
     assert summary == {"condition": "teacher", "mean_iou": 1.0, "acc_05": 1, "valid": 2, "n": 2}
+
+
+def test_n50_terminal_direct_uses_saved_reasoning_without_entity_bridge(monkeypatch):
+    def advance(_model, cache, token_ids):
+        return (*cache, *token_ids), None
+
+    monkeypatch.setattr(opd, "_load_rgb_image", lambda _path: object())
+    monkeypatch.setattr(opd, "_render_and_process", lambda *_args: ("chat template\n<think>\n", {}))
+    monkeypatch.setattr(opd, "_advance", advance)
+    monkeypatch.setattr(opd, "fork", lambda cache: tuple(cache))
+    row = {
+        "sample_id": "row-49",
+        "image_path": "unused.jpg",
+        "expression": "target object",
+        "ground_truth_bbox": [10, 20, 30, 40],
+        "reasoning_token_ids": [7001, 7002, 7003],
+    }
+
+    state = opd.build_states(
+        _Model(), _Processor(), [row], "zero_cot", student_conditioning="terminal_direct"
+    )[0]
+
+    bbox_ids = _Processor.tokenizer.encode(BOX_OPEN, add_special_tokens=False)
+    assert state["teacher"] == ("c0", *bbox_ids[:-1])
+    assert state["student"] == ("c0", 7001, 7002, 7003, *bbox_ids[:-1])
+    assert state["student_conditioning"] == {
+        "kind": "terminal_direct_bbox",
+        "cache_origin": "c0_plus_full_saved_reasoning",
+        "uses_entity_bridge": False,
+        "repeats_question": False,
+        "suffix": BOX_OPEN,
+    }
+
+
+def test_load_records_keeps_exactly_the_50_successful_trajectories(tmp_path):
+    path = tmp_path / "trajectories.jsonl"
+    rows = [
+        {"sample_id": "row-0", "status": "ok"},
+        {"sample_id": "row-1", "status": "error"},
+        {"sample_id": "legacy-without-status"},
+    ]
+    path.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
+
+    records, receipt = opd.load_records(path, expected_samples=2)
+
+    assert [row["sample_id"] for row in records] == ["row-0", "legacy-without-status"]
+    assert receipt == {"source_rows": 3, "accepted_rows": 2, "excluded_non_ok_rows": 1}
+
+
+def test_eval_seed_uses_stable_source_index_across_filtered_row_gaps():
+    assert opd.eval_seed({"source_index": 54}, fallback_index=49, draw=3) == opd.SEED + 9_054_003
+    assert opd.eval_seed({}, fallback_index=4, draw=2) == opd.SEED + 9_004_002
+
+
+def test_frozen_record_rejects_rendered_prompt_drift(monkeypatch):
+    monkeypatch.setattr(opd, "_load_rgb_image", lambda _path: object())
+    monkeypatch.setattr(opd, "_render_and_process", lambda *_args: ("new prompt\n<think>\n", {}))
+    row = {
+        "sample_id": "row-0",
+        "image_path": "unused.jpg",
+        "expression": "target",
+        "rendered_prompt": "saved prompt\n<think>\n",
+        "reasoning_token_ids": [1],
+    }
+
+    with pytest.raises(RuntimeError, match="rendered prompt drift"):
+        opd.build_states(
+            _Model(), _Processor(), [row], "zero_cot", student_conditioning="terminal_direct"
+        )

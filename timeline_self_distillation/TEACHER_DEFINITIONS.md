@@ -33,7 +33,9 @@ PYTHONHASHSEED=260600564 python -m timeline_self_distillation.run_opd_micro \
 `--teacher zero_cot` is required explicitly. It is intentionally not a default:
 the first real five-image, 16-draw pilot found that this teacher was
 geometrically mixed and that unconditional OPD reduced mean IoU. See
-`ZERO_COT_PILOT_RESULTS.md`.
+`ZERO_COT_PILOT_RESULTS.md`. A later 50-image run found a small, heterogeneous
+teacher advantage but again found large negative transfer from unconditional
+OPD; see `ZERO_COT_N50_RESULTS.md`.
 
 ## Legacy controls
 

@@ -1,4 +1,4 @@
-"""Bounded five-image bbox-on-policy training diagnostic, not a generalization result.
+"""Bounded seen-image bbox-on-policy training diagnostic, not a generalization result.
 
 Replay each saved frozen full reasoning once. Resample bbox tokens on-policy at
 every update, score the same prefixes with a frozen teacher, update only the
@@ -34,6 +34,7 @@ from verl.experimental.routed_grounding.router import parse_response, xyxy_iou
 
 
 TEACHER_CHOICES = ("zero_cot", "early_step0", "early_span1", "late_scrub", "late_entity")
+STUDENT_CONDITIONING_CHOICES = ("terminal_direct", "legacy_entity_query")
 
 
 def teacher_protocol_receipt(teacher):
@@ -71,6 +72,43 @@ def teacher_protocol_receipt(teacher):
     }
 
 
+def student_protocol_receipt(conditioning):
+    if conditioning == "terminal_direct":
+        return {
+            "kind": "terminal_direct_bbox",
+            "cache_origin": "c0_plus_full_saved_reasoning",
+            "uses_entity_bridge": False,
+            "repeats_question": False,
+            "suffix": BOX_OPEN,
+        }
+    if conditioning == "legacy_entity_query":
+        return {
+            "kind": "legacy_terminal_entity_query",
+            "cache_origin": "c0_plus_full_saved_reasoning",
+            "uses_entity_bridge": True,
+            "repeats_question": True,
+            "suffix": "QUERY(entity, question) + BOX_OPEN",
+        }
+    raise ValueError(conditioning)
+
+
+def load_records(path, *, expected_samples=None):
+    source_rows = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    records = [row for row in source_rows if row.get("status") in (None, "ok")]
+    if not records:
+        raise RuntimeError("no successful records found")
+    if expected_samples is not None and len(records) != expected_samples:
+        raise RuntimeError(f"expected {expected_samples} successful records, found {len(records)}")
+    sample_ids = [str(row["sample_id"]) for row in records]
+    if len(sample_ids) != len(set(sample_ids)):
+        raise RuntimeError("successful records contain duplicate sample ids")
+    return records, {
+        "source_rows": len(source_rows),
+        "accepted_rows": len(records),
+        "excluded_non_ok_rows": len(source_rows) - len(records),
+    }
+
+
 def _validate_zero_cot_c0(rendered_prompt):
     """Fail closed unless C0 is the untouched assistant thinking opener."""
 
@@ -89,7 +127,7 @@ def _encode_exact_suffix(tokenizer, text, label):
     return token_ids
 
 
-def build_states(model, processor, records, teacher):
+def build_states(model, processor, records, teacher, *, student_conditioning="legacy_entity_query"):
     states = []
     model.eval()
     with torch.no_grad():
@@ -98,13 +136,25 @@ def build_states(model, processor, records, teacher):
             rendered, inputs = _render_and_process(
                 processor, row["expression"], _load_rgb_image(row["image_path"])
             )
+            if "rendered_prompt" in row and rendered != row["rendered_prompt"]:
+                raise RuntimeError(f"{row['sample_id']} rendered prompt drifted from the frozen trajectory")
+            if "prompt_input_ids" in row:
+                actual_prompt_ids = inputs.get("input_ids")
+                if actual_prompt_ids is None:
+                    raise RuntimeError(f"{row['sample_id']} processor did not return input_ids")
+                actual_prompt_ids = actual_prompt_ids[0].detach().cpu().tolist()
+                if actual_prompt_ids != [int(token_id) for token_id in row["prompt_input_ids"]]:
+                    raise RuntimeError(f"{row['sample_id']} prompt token ids drifted from the frozen trajectory")
             if teacher == "zero_cot":
                 _validate_zero_cot_c0(rendered)
             inputs = {k: v.to("cuda") if isinstance(v, torch.Tensor) else v for k, v in inputs.items()}
             out = model(**inputs, use_cache=True, logits_to_keep=1, return_dict=True)
             c0 = out.past_key_values
             delta = model.model.rope_deltas.detach().clone()
-            cT, _ = _advance(model, fork(c0), row["reasoning_ids"])
+            reasoning_ids = row.get("reasoning_ids", row.get("reasoning_token_ids"))
+            if not reasoning_ids:
+                raise RuntimeError(f"{row['sample_id']} has no saved reasoning token ids")
+            cT, _ = _advance(model, fork(c0), reasoning_ids)
             teacher_suffix = None
             if teacher == "zero_cot":
                 cteacher = c0
@@ -125,7 +175,7 @@ def build_states(model, processor, records, teacher):
                     "repeats_question": True,
                 }
             elif teacher == "early_span1":
-                cteacher, _ = _advance(model, fork(c0), row["reasoning_ids"][: row["first_span_offset"]])
+                cteacher, _ = _advance(model, fork(c0), reasoning_ids[: row["first_span_offset"]])
                 teacher_conditioning = {
                     "kind": "legacy_span1_entity_query",
                     "reasoning_tokens": int(row["first_span_offset"]),
@@ -144,13 +194,20 @@ def build_states(model, processor, records, teacher):
                 cteacher = cT
                 teacher_conditioning = {
                     "kind": "legacy_late_reasoning_entity_query",
-                    "reasoning_tokens": len(row["reasoning_ids"]),
+                    "reasoning_tokens": len(reasoning_ids),
                     "uses_entity_bridge": True,
                     "repeats_question": True,
                 }
             else:
                 raise ValueError(teacher)
-            student_suffix = QUERY.format(entity=row["entity"], question=row["expression"]) + BOX_OPEN
+            if student_conditioning == "terminal_direct":
+                student_suffix = BOX_OPEN
+                student_conditioning_receipt = student_protocol_receipt(student_conditioning)
+            elif student_conditioning == "legacy_entity_query":
+                student_suffix = QUERY.format(entity=row["entity"], question=row["expression"]) + BOX_OPEN
+                student_conditioning_receipt = student_protocol_receipt(student_conditioning)
+            else:
+                raise ValueError(f"unknown student conditioning: {student_conditioning}")
             if teacher_suffix is None:
                 teacher_suffix = student_suffix
             student_suffix_ids = _encode_exact_suffix(
@@ -171,6 +228,7 @@ def build_states(model, processor, records, teacher):
                     "last_opening_id": student_suffix_ids[-1],
                     "rope_deltas": delta,
                     "teacher_conditioning": teacher_conditioning,
+                    "student_conditioning": student_conditioning_receipt,
                 }
             )
     return states
@@ -282,7 +340,7 @@ def evaluate(model, tokenizer, adapter, grammar, states, output, step, draws):
         row = state["row"]
         for draw in range(draws):
             # Held-out draws, not held-out images: never call this generalization.
-            seed = SEED + 9_000_000 + index * 1000 + draw
+            seed = eval_seed(row, fallback_index=index, draw=draw)
             pred = sample_bbox(model, tokenizer, grammar, state, seed)
             iou = float(xyxy_iou(pred["bbox"], row["ground_truth_bbox"])) if pred["parse_valid"] else 0.0
             result = {k: v for k, v in pred.items() if k != "supports"}
@@ -309,7 +367,7 @@ def evaluate_teacher(model, tokenizer, adapter, grammar, states, output, draws):
     for index, state in enumerate(states):
         row = state["row"]
         for draw in range(draws):
-            seed = SEED + 9_000_000 + index * 1000 + draw
+            seed = eval_seed(row, fallback_index=index, draw=draw)
             pred = sample_bbox(model, tokenizer, grammar, state, seed, cache_role="teacher")
             iou = float(xyxy_iou(pred["bbox"], row["ground_truth_bbox"])) if pred["parse_valid"] else 0.0
             result = {k: v for k, v in pred.items() if k != "supports"}
@@ -328,28 +386,45 @@ def evaluate_teacher(model, tokenizer, adapter, grammar, states, output, draws):
     return summary
 
 
+def eval_seed(row, *, fallback_index, draw):
+    stable_index = int(row.get("source_index", fallback_index))
+    return SEED + 9_000_000 + stable_index * 1000 + int(draw)
+
+
 def run(args):
     if os.environ.get("PYTHONHASHSEED") != str(SEED):
         raise RuntimeError(f"set PYTHONHASHSEED={SEED}")
-    records = [json.loads(line) for line in args.pilot_records.read_text().splitlines() if line.strip()]
-    if len(records) != 5:
-        raise RuntimeError("this diagnostic requires exactly five fixed samples")
+    records, source_receipt = load_records(args.pilot_records, expected_samples=args.expected_samples)
+    intermediate_eval = (
+        "no intermediate student evaluation"
+        if args.eval_every <= 0
+        else f"student every {args.eval_every} updates"
+    )
     args.output_dir.mkdir(parents=True, exist_ok=False)
     _write_json(
         args.output_dir / "protocol.json",
         {
-            "kind": "five_seen_image_bbox_on_policy_micro_training",
+            "kind": "bbox_on_policy_micro_training",
             "teacher": args.teacher,
             "teacher_conditioning": teacher_protocol_receipt(args.teacher),
+            "student_conditioning": student_protocol_receipt(args.student_conditioning),
+            "sample_count": len(records),
+            "source_receipt": source_receipt,
             "steps": args.steps,
+            "training_coverage": {
+                "order": "source order, round-robin",
+                "updates_per_sample_floor": args.steps // len(records),
+                "partial_cycle_updates": args.steps % len(records),
+            },
             "lr": args.lr,
             "rank": 8,
             "loss": f"numeric-only {args.divergence} KL; task=0; no GT in updates",
             "invalid_box_policy": "grammar numeric rows distilled even if geometry invalid; eval IoU=0",
             "main_policy": "frozen complete r/e, replayed once; bbox freshly sampled each update",
             "eval": (
-                f"same five seen images, {args.eval_draws} fresh fixed draw seeds; "
-                "student at step 0, every 10 updates, and final step; teacher once; not generalization"
+                f"same {len(records)} seen images, {args.eval_draws} fresh fixed draw seeds; "
+                f"student at step 0 and final step; {intermediate_eval}; "
+                "teacher once; not generalization"
             ),
             "eval_draws": args.eval_draws,
             "source": str(args.pilot_records),
@@ -378,7 +453,9 @@ def run(args):
     adapter = install_terminal_query_lora(model, rank=8)
     parameters = list(terminal_parameter_whitelist(model, adapter).values())
     adapter.enabled = False
-    states = build_states(model, processor, records, args.teacher)
+    states = build_states(
+        model, processor, records, args.teacher, student_conditioning=args.student_conditioning
+    )
     vocab = model.config.text_config.vocab_size
     grammar = xgr.GrammarCompiler(
         xgr.TokenizerInfo.from_huggingface(processor.tokenizer, vocab_size=vocab)
@@ -407,7 +484,7 @@ def run(args):
         metrics.update(step=step, sample_id=state["row"]["sample_id"])
         _append_jsonl(args.output_dir / "train.jsonl", metrics)
         print("TRAIN " + json.dumps(metrics), flush=True)
-        if step % 10 == 0 or step == args.steps:
+        if step == args.steps or (args.eval_every > 0 and step % args.eval_every == 0):
             final = evaluate(
                 model, processor.tokenizer, adapter, grammar, states, args.output_dir, step, args.eval_draws
             )
@@ -428,7 +505,10 @@ def run(args):
             "seconds": time.perf_counter() - start,
             "trainable_parameters": sum(p.numel() for p in parameters),
             "max_cuda_allocated_bytes": torch.cuda.max_memory_allocated(),
-            "limitation": "Five seen images; exploratory optimization/transfer diagnostic, not test-set gain.",
+            "limitation": (
+                f"{len(records)} seen images; exploratory optimization/transfer diagnostic, "
+                "not held-out generalization."
+            ),
         },
     )
 
@@ -437,6 +517,7 @@ def parse_args(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--pilot-records", type=Path, required=True)
     p.add_argument("--output-dir", type=Path, required=True)
+    p.add_argument("--expected-samples", type=int)
     p.add_argument(
         "--teacher",
         choices=TEACHER_CHOICES,
@@ -446,10 +527,17 @@ def parse_args(argv=None):
             "a validated performance-improving default. Other choices reproduce legacy controls."
         ),
     )
+    p.add_argument(
+        "--student-conditioning",
+        choices=STUDENT_CONDITIONING_CHOICES,
+        default="legacy_entity_query",
+        help="Use terminal_direct for raw trajectory records without an entity bridge.",
+    )
     p.add_argument("--steps", type=int, default=20)
     p.add_argument("--lr", type=float, default=0.001)
     p.add_argument("--divergence", choices=("reverse", "forward"), default="reverse")
     p.add_argument("--eval-draws", type=int, default=4)
+    p.add_argument("--eval-every", type=int, default=10)
     p.add_argument("--device", default="3")
     return p.parse_args(argv)
 

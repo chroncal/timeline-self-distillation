@@ -6,7 +6,7 @@ Private source snapshot of the timeline self-distillation module and its two sup
 
 The following directories are copied without content changes from the working tree of `routed-grounding-repair-verl`:
 
-- `timeline_self_distillation/`: 28 Python source/test files and two teacher/result documents.
+- `timeline_self_distillation/`: 28 Python source/test files and three teacher/result documents.
 - `live_kv_probe_prototype/`: 5 source/documentation files.
 - `reasoning_checkpoints/`: 8 source/test/protocol/documentation files and 5 symbolic links.
 
@@ -27,12 +27,15 @@ forks the untouched `C0` cache and immediately appends the fixed bbox output
 prefix. It consumes no generated reasoning, entity bridge, or repeated question.
 The former `early_span1` and related paths remain available as explicitly named
 legacy controls. A real five-image, 16-draw pilot found that unconditional OPD
-with this teacher reduced mean IoU, so the teacher must be selected explicitly
-and is not a performance-improving default. See
+with this teacher reduced mean IoU. A later 50-image run found a small,
+heterogeneous teacher advantage but again found large negative transfer from
+unconditional OPD, so the teacher must be selected explicitly and is not a
+performance-improving default. See
 `timeline_self_distillation/TEACHER_DEFINITIONS.md` and
-`timeline_self_distillation/ZERO_COT_PILOT_RESULTS.md`.
+`timeline_self_distillation/ZERO_COT_PILOT_RESULTS.md`, plus
+`timeline_self_distillation/ZERO_COT_N50_RESULTS.md` for the 50-image result.
 
-To verify all 43 regular snapshot files from the repository root (symbolic links are preserved separately in Git):
+To verify all 44 regular snapshot files from the repository root (symbolic links are preserved separately in Git):
 
 ```bash
 sha256sum -c SHA256SUMS
