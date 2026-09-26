@@ -1,0 +1,27 @@
+{
+  "schema": "mmgcot_pure_e_decision_v1",
+  "question": "Can complete coordinate decisions and a larger bbox-only adapter improve pure E-OPD localization?",
+  "arms": {
+    "A": {"supervision_scope": "numeric", "adapter_scope": "terminal_q", "trainable_parameters": 24576, "source": "existing_pure_e_opd_v2_checkpoints"},
+    "B": {"supervision_scope": "coordinate_decision", "adapter_scope": "terminal_q", "trainable_parameters": 24576},
+    "C": {"supervision_scope": "coordinate_decision", "adapter_scope": "last_two_qvo", "trainable_parameters": 122880}
+  },
+  "activation_scope": "bbox_only",
+  "teacher": "frozen_E_with_identical_student_raw_coordinate_prefix",
+  "objective": "full_legal_support_reverse_kl_only",
+  "normalization": "sum_decision_KL_divided_by_actual_sampled_numeric_token_count",
+  "optimizer": {"kind": "AdamW", "lr": 0.0001, "betas": [0.9, 0.999], "eps": 1e-8, "weight_decay": 0, "grad_clip": 1.0},
+  "opd_coefficient": 0.1,
+  "seeds": [20260921, 20260922, 20260923],
+  "formal_steps": 200,
+  "effective_batch": 16,
+  "microbatch": 1,
+  "checkpoint_every": 50,
+  "fixed_checkpoint": 200,
+  "bbox_rollout": {"temperature": 1.0, "top_p": 1.0, "max_tokens": 48},
+  "primary_metric": "image_equal_mean_iou_of_four_random_draws",
+  "primary_contrasts": ["B-A", "C-B"],
+  "bootstrap": {"unit": "image", "replicates": 10000},
+  "data_manifest": "configs/mmgcot_formal_v2.json",
+  "test200_interpretation": "prior_diagnostic_cohort_conditioned_retest"
+}

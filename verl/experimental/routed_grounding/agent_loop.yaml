@@ -1,0 +1,31 @@
+# Register with:
+# actor_rollout_ref.rollout.agent.agent_loop_config_path=
+#   verl/experimental/routed_grounding/agent_loop.yaml
+#
+# The core Trainer must also select the manager which injects the existing
+# MultiTeacherModelManager clients:
+# +actor_rollout_ref.rollout.agent.agent_loop_manager_class=
+#   verl.experimental.routed_grounding.agent_loop.RoutedGroundingAgentLoopManager
+#
+# Teacher serving is created by the existing distillation resource-pool path;
+# therefore distillation.enabled=true and one compatible VL Teacher model are
+# required.  ``teacher_client_key`` may be left null only when exactly one
+# Teacher client exists.
+- name: routed_grounding
+  _target_: verl.experimental.routed_grounding.agent_loop.RoutedGroundingAgentLoop
+  # `routed_repair`: localization bbox-only; referent correction+bbox.
+  # `generic_sopd`: every high-confidence failure uses correction+bbox.
+  # `standard_opd`: no repair Teacher calls (diagnostic probes optional).
+  arm: routed_repair
+  standard_opd_probe_diagnostics: false
+  teacher_client_key: null
+  probe_seed_base: 3407
+  probe_max_tokens: 48
+  student_bbox_max_tokens: 48
+  teacher_bbox_max_tokens: 48
+  teacher_correction_max_tokens: 64
+  teacher_temperature: 0.0
+  teacher_top_p: 1.0
+  teacher_top_k: 0
+  # `gt_overlay` is only for smoke checks; training uses original + 1.5x crop.
+  teacher_view: gt_crop

@@ -1,0 +1,13 @@
+{
+  "cache_path": "/mnt/sda/sujingyang/research/routed-grounding-repair-verl/outputs/research_experiments/mmgcot_timeline_training/formal_v2_prepared/train/prefix_cache/003aae6a1df416eabfc26e68",
+  "cache_metadata_sha256": "1f8738ea619001db773314a0fed17b0b24419f3e8c13f4f035d63fb17346b072",
+  "model_config_sha256": "b90b86f35c8e6925ef74ee04d0e758f0a845c83a42089ad82bbaa948de9b4204",
+  "zero_increment_exact": true,
+  "native_vs_functional_max_logit_diff": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "cross_token_q19_down_gradient_max": 0.0032320977188646793,
+  "trainable_parameters": 122880
+}

@@ -1,0 +1,29 @@
+{
+  "schema": "pure_e_decision_v1",
+  "checkpoints": {
+    "terminal_q_seed20260921": {
+      "path": "/mnt/sda/sujingyang/research/routed-grounding-repair-verl/outputs/research_experiments/mmgcot_timeline_training/pure_e_decision_v1/formal/terminal_q_seed20260921/step_0200.pt",
+      "sha256": "aa3fd7019d0ddd81e378e3c4a4b415e5a3490595e7642c0db029dee2aacc36d9"
+    },
+    "terminal_q_seed20260922": {
+      "path": "/mnt/sda/sujingyang/research/routed-grounding-repair-verl/outputs/research_experiments/mmgcot_timeline_training/pure_e_decision_v1/formal/terminal_q_seed20260922/step_0200.pt",
+      "sha256": "289d26b664217627a0e8f8677fffac3bc5cf5cc1d052bf663546829264f7e393"
+    },
+    "terminal_q_seed20260923": {
+      "path": "/mnt/sda/sujingyang/research/routed-grounding-repair-verl/outputs/research_experiments/mmgcot_timeline_training/pure_e_decision_v1/formal/terminal_q_seed20260923/step_0200.pt",
+      "sha256": "26d6f7309c0a83a293377ee1f1a9f4faecd57ec0b22131b5e84e0edf78e2e38a"
+    },
+    "last_two_qvo_seed20260921": {
+      "path": "/mnt/sda/sujingyang/research/routed-grounding-repair-verl/outputs/research_experiments/mmgcot_timeline_training/pure_e_decision_v1/formal/last_two_qvo_seed20260921/step_0200.pt",
+      "sha256": "07f5e4b29f17594daf5776af590802bf0d721cd054ac05664ef031e7e5acca0e"
+    },
+    "last_two_qvo_seed20260922": {
+      "path": "/mnt/sda/sujingyang/research/routed-grounding-repair-verl/outputs/research_experiments/mmgcot_timeline_training/pure_e_decision_v1/formal/last_two_qvo_seed20260922/step_0200.pt",
+      "sha256": "dccf3f6040af7888068ec0005e78a9a0d2761f4ed8517c67b57d075497dc5380"
+    },
+    "last_two_qvo_seed20260923": {
+      "path": "/mnt/sda/sujingyang/research/routed-grounding-repair-verl/outputs/research_experiments/mmgcot_timeline_training/pure_e_decision_v1/formal/last_two_qvo_seed20260923/step_0200.pt",
+      "sha256": "8bd627b82c0e40cf42a64ded54506d99b4e27fa410bba3b31dfa6da35e73feb1"
+    }
+  }
+}

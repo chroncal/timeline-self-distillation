@@ -1,0 +1,32 @@
+{
+  "schema": "mmgcot_formal_training_v2",
+  "model": "/mnt/sda/sujingyang/models/Qwen3.5-0.8B",
+  "bridge_version": "mmgcot_target_bridge_v3p5_prompt_only",
+  "semantic_review_policy": "report_only",
+  "student_context": "L=original_image+question+full_frozen_reasoning+same_late_target_description+bbox_opening",
+  "teacher_contexts": {
+    "R": "original_image+question+no_generated_reasoning+same_late_target_description+bbox_opening",
+    "E": "original_image+question+fixed_first_quarter_sentence_boundary+same_late_target_description+bbox_opening"
+  },
+  "arms": ["bbox_sft", "r_opd", "e_opd"],
+  "adapter": {"location": "last_full_attention_q_proj", "target": "query_only", "rank": 8, "trainable_parameters": 24576},
+  "loss": {"sft_coefficient": 1.0, "opd": "full_grammar_support_reverse_kl_student_to_frozen_teacher", "temperature": 1.0, "numeric_token_positions_only": true},
+  "optimizer": {"kind": "AdamW", "betas": [0.9, 0.999], "eps": 1e-8, "weight_decay": 0.0, "clip_norm": 1.0, "schedule": "constant"},
+  "runtime": {"deterministic_cuda": true, "tf32": false, "omp_num_threads": 4, "mkl_num_threads": 4, "cublas_workspace_config": ":4096:8"},
+  "training": {"microbatch": 1, "effective_batch": 16, "formal_steps": 200, "formal_seeds": [20260921, 20260922, 20260923], "checkpoint_every": 50},
+  "calibration": {"seed": 20260921, "steps": 60, "sft_lr_candidates": [0.0001, 0.0003, 0.001], "common_lambda_candidates": [0.1, 0.3, 1.0], "near_tie_absolute_iou": 0.002},
+  "generation": {"natural_reasoning": {"temperature": 0.8, "top_p": 0.95, "max_tokens": 4096}, "bridge": {"greedy": true, "max_tokens": 160}, "bbox": {"temperature": 1.0, "top_p": 1.0, "max_tokens": 48, "grammar": "MM-GCoT bbox regex"}},
+  "data_manifest": {
+    "train": "/mnt/sda/sujingyang/research/datasets/mmgcot_timeline_training_v1/train_frozen.jsonl",
+    "train_sha256": "3f4643b2899bb5cd8b8a423b1932c1245f251811b580743b4c8d82f60d650a20",
+    "dev": "/mnt/sda/sujingyang/research/datasets/mmgcot_timeline_training_v1/dev_frozen.jsonl",
+    "dev_sha256": "215c5f1ab5c3ba14ca47a94cd16dda365f90c4bf75490fe584f0b041ce44749b",
+    "independent_confirmation": "/mnt/sda/sujingyang/research/datasets/mmgcot_timeline_training_v1/independent_confirmation_frozen.jsonl",
+    "independent_confirmation_sha256": "96e4e8a9c6113e5587b871a085dde251d97b4184e9bda44643cdbe2f702d7847",
+    "diagnostic_selection_test200": "/mnt/sda/sujingyang/research/datasets/mmgcot_20260920_frozen_final_v1/formal_frozen_final.jsonl",
+    "diagnostic_selection_test200_sha256": "f4975242439e3ee2e9f5c4a4ad8454a3a527db4c2cdd8ceb6168945e14eb8baf"
+  },
+  "primary_metric": "image_equal_mean_iou_of_four_random_bbox_draws",
+  "primary_contrast": "r_opd_minus_bbox_sft",
+  "independent_confirmation_policy": "do_not_infer_until_hyperparameters_and_all_formal_checkpoints_are_frozen"
+}

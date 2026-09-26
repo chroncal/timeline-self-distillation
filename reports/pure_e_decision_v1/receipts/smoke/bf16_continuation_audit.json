@@ -1,0 +1,19 @@
+{
+  "sample_id": "train:object:000002377678_cot:24997",
+  "checkpoint_sha256": "2b06573f4e69436aadacd1308a413167ef77af30ab3ed3fce991eec9e22cd3b2",
+  "zero_increment_initial_logits_identical": true,
+  "max_logit_differences": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "master_cache_fingerprints": {
+    "L": "ba99eb83f7a4c5c88d067c7cc8fddd40ff89fabed778be39d968b8acbd945d14",
+    "E": "737ca40aa342f90d2a62a2c2509ba36b5a9b04d5577a4272de3bf86e23f420a8"
+  },
+  "same_student_teacher_raw_token_prefix": true,
+  "decision_positions": 12,
+  "numeric_positions": 12
+}

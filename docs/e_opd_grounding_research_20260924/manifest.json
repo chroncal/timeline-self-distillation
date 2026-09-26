@@ -1,0 +1,17 @@
+{
+  "created_utc": "2026-09-24T16:31:22.269256+00:00",
+  "git_head": "4dacbccf68f8a9d318ef4815b53af12ba4a8d165",
+  "worktree_clean": false,
+  "scope": "literature and read-only pure E-OPD evidence audit; no new model training in this research task",
+  "user_confirmed_scope": "may expand trainable modules; bbox quality primary, visual evidence use mechanism, CoT length auxiliary",
+  "audit_command": ".venv/bin/python docs/e_opd_grounding_research_20260924/audit_existing.py",
+  "tmux_session": "eopd_research_cpu_0924",
+  "files": {
+    "mmgcot_timeline_training/formal_train_v2.py": "2949326983c68fbcef3748babbaafdf4f3a0efffed928686fd4bf297ce7dd475",
+    "mmgcot_timeline_training/formal_pure_opd.py": "0ee447bc900477dc6aa48d0ea54efed82ff4a80952c927739d4180c6fc6c1148",
+    "mmgcot_timeline_training/formal_losses.py": "aa7e3abcf04eb8ff3709b52282697c9ed80f1c79fffc21002a057b5b90aa650c",
+    "timeline_self_distillation/terminal_adapter.py": "aa0572a0c42c7e5ff8b7c4d5d0fbd1faa9110f0c982dbb64bcbde492a67daf15",
+    "docs/e_opd_grounding_research_20260924/audit_existing.py": "57c783be27ef341e6b767babb5a49b44777cf0cf146ef7012dc97ccbe97d7d30",
+    "docs/e_opd_grounding_research_20260924/REPORT.md": "25fbbee8d28ec509529693da293d38fa5cb1f83854919a34e1118de7bfa443fb"
+  }
+}

@@ -1,0 +1,104 @@
+{
+  "audit_skill": "experiment-audit",
+  "date": "2026-09-16",
+  "overall_verdict": "WARN",
+  "integrity_status": "warn",
+  "review_independence": "same-family",
+  "acceptance_status": "provisional",
+  "read_only": true,
+  "gpu_jobs_launched": 0,
+  "checks": {
+    "A_gt_provenance": {
+      "status": "PASS",
+      "details": "Five GT boxes traced to hash-verified RefCOCOg references and COCO annotations, with image dimensions and normalization verified."
+    },
+    "B_score_normalization": {
+      "status": "PASS",
+      "details": "Standard IoU and image-dimension normalization; invalid outputs retained at zero; no prediction-statistic normalization."
+    },
+    "C_result_existence": {
+      "status": "WARN",
+      "numeric_status": "PASS",
+      "details": "All claimed artifacts and numbers verified; original runs lack complete dependency snapshots and refinement runtime entry hash differs from current file."
+    },
+    "D_dead_metrics": {
+      "status": "PASS",
+      "coverage_warning": "Reference losses and tokenwise scorer are not the production micro-training path."
+    },
+    "E_scope": {
+      "status": "WARN",
+      "images": 5,
+      "training_runs_per_divergence": 1,
+      "updates_per_run": 20,
+      "draws_per_image_condition": 4,
+      "reasoning_tokens": [184, 404, 589, 198, 232],
+      "details": "Previously completion-successful seen images; no independent test set or training-seed replication."
+    },
+    "F_evaluation_type": {
+      "status": "PASS",
+      "bbox_evaluation": "real_gt",
+      "opd_supervision": "self_supervised_proxy"
+    }
+  },
+  "verification": {
+    "original_raw_eval_draws_recomputed": 300,
+    "visual_raw_eval_draws_recomputed": 60,
+    "train_updates_checked": 40,
+    "cpu_tests_passed": 21,
+    "serializer_cases_checked": 4004,
+    "mixed_digit_punctuation_tokens_found": 0,
+    "teacher_grammar_draws_verified": 180,
+    "visual_zero_backend_token_parity": "20/20"
+  },
+  "implementation_findings": [
+    {
+      "id": "I1",
+      "severity": "P1",
+      "kind": "validation_gap",
+      "finding": "Actual 0.8B BF16 multimodal rollout-to-gradient replay and branch state/logit parity not directly established.",
+      "confirmed_cause_of_negative_result": false,
+      "evidence": [
+        "timeline_self_distillation/run_opd_micro.py:129",
+        "timeline_self_distillation/test_terminal_adapter.py:74",
+        "refine-logs/timeline-opd-20260916/FINAL_PROPOSAL.md:262"
+      ]
+    },
+    {
+      "id": "I2",
+      "severity": "P2",
+      "kind": "reproducibility_gap",
+      "finding": "Original run manifests do not freeze complete imported source; refinement runtime source unavailable at its recorded hash.",
+      "confirmed_cause_of_negative_result": false
+    },
+    {
+      "id": "I3",
+      "severity": "P2",
+      "kind": "documented_protocol_drift",
+      "finding": "Actual protocol distills geometrically invalid bbox digit rows, while design says invalid outputs have zero OPD.",
+      "observed_impact": "No invalid bbox among the 40 logged training updates."
+    },
+    {
+      "id": "I4",
+      "severity": "INFO",
+      "kind": "verified",
+      "finding": "Token shift, common grammar support, KL direction, teacher detach, last-layer per-head query slicing and sequential GDN continuation match the declared implementation."
+    }
+  ],
+  "claim_impacts": [
+    {"id": "C1_real_runs_and_reported_negative_iou", "impact": "supported"},
+    {"id": "C2_early_free_generation_inferior_on_five_images", "impact": "supported"},
+    {"id": "C3_H1_conditional_quality_rejected", "impact": "unsupported"},
+    {"id": "C4_general_OPD_ineffectiveness", "impact": "unsupported"},
+    {"id": "C5_numeric_anchoring_or_attention_dilution_proven", "impact": "unsupported"},
+    {"id": "C6_visual_bias_fixed_draw_sensitivity", "impact": "supported_with_scope_qualifier"}
+  ],
+  "audited_primary_hashes": {
+    "teacher_pilot_records": "27b07bc8c06e4faba58fd434e07683b2021a7740728bbe35d611e4aae85b4ef2",
+    "teacher_refinement_records": "6808b513975f2550e7b9fe9bded5bfca0d647633452da5fca564fa5c9604bb9a",
+    "reverse_eval": "ed26c9370fbe24ece5533764d5af8c9af71fe05dfa63a7bddd95e9e199abc3f5",
+    "forward_eval": "029ae1f2122463884b649f638a7724f07adf97ca194587b4d88a7d4db53917d7",
+    "visual_read_records": "a72a67f2562060b1397555e724d182dabf16f4c8e2714bcb1def5a0965dc3c0a",
+    "reverse_adapter": "73b657dacbd1c1697b9047ed29e47b99491f51bb1feb94c172379a15449183ba",
+    "forward_adapter": "c86935560157edbc0b3ec27b00413b8712321961999691b30ad17dfb629dfb6f"
+  }
+}

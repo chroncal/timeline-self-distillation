@@ -1,0 +1,18 @@
+{
+  "counts": {
+    "rollouts": 9600,
+    "old_numeric_positions": 108157,
+    "new_decision_positions": 112790,
+    "new_end_decision_positions": 4633,
+    "rollouts_with_new_end_decision": 3839,
+    "digit": 38400,
+    "digit_or_end": 74390,
+    "forced_separator": 33767,
+    "format": 26736
+  },
+  "inputs_sha256": {
+    "/mnt/sda/sujingyang/research/routed-grounding-repair-verl/outputs/research_experiments/mmgcot_timeline_training/pure_opd_v2/formal/e_opd_pure_seed20260921/rollouts.jsonl": "8105b4fbdf0b31c3ed066e507684b43e40451d949427601e2dfa99835a2dc00a",
+    "/mnt/sda/sujingyang/research/routed-grounding-repair-verl/outputs/research_experiments/mmgcot_timeline_training/pure_opd_v2/formal/e_opd_pure_seed20260922/rollouts.jsonl": "7136bef2512a16bec4e78f523d9ee7403d0086908a0c9c8c2636f4a13802c50d",
+    "/mnt/sda/sujingyang/research/routed-grounding-repair-verl/outputs/research_experiments/mmgcot_timeline_training/pure_opd_v2/formal/e_opd_pure_seed20260923/rollouts.jsonl": "6fe1ad40de03b6141c3a770cb3a09f336d720fa5f1fe2629715bf185d6868d75"
+  }
+}
